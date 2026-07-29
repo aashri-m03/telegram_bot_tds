@@ -1,4 +1,5 @@
 import os
+import json
 from huggingface_hub import InferenceClient
 
 
@@ -16,7 +17,12 @@ def analyze(question):
         messages=[
             {
                 "role": "system",
-                "content": "You are a data analyst. Solve the question and return only the answer."
+                "content": (
+                    "You are a data analyst. "
+                    "Answer the user's question. "
+                    "Return ONLY a valid JSON object. "
+                    "No markdown, no explanation."
+                )
             },
             {
                 "role": "user",
@@ -26,6 +32,14 @@ def analyze(question):
         max_tokens=500
     )
 
-    return {
-        "answer": response.choices[0].message.content
-    }
+    text = response.choices[0].message.content.strip()
+
+    try:
+        # Convert AI JSON text into Python dictionary
+        return json.loads(text)
+
+    except json.JSONDecodeError:
+        # fallback if model returns plain text
+        return {
+            "answer": text
+        }

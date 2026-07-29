@@ -22,10 +22,7 @@ load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 if not TOKEN:
-    raise ValueError("TELEGRAM_TOKEN missing in .env")
-
-
-LOG_URL = "https://raw.githubusercontent.com/aashri-m03/telegram_bot_tds/refs/heads/main/run.jsonl"
+    raise ValueError("TELEGRAM_TOKEN missing")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,41 +38,35 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
 
     try:
-
         answer = analyze(user_text)
 
+        # Save logs separately
         save_log(
             user_text,
             answer
         )
 
-        # Remove nested answer if analyzer returns {"answer": value}
-        if isinstance(answer, dict) and "answer" in answer:
-            final_answer = answer["answer"]
+        # Ensure only JSON object is sent to grader
+        if isinstance(answer, dict):
+            final_response = answer
         else:
-            final_answer = answer
-
-        response = {
-            "answer": final_answer,
-            "log_url": LOG_URL
-        }
+            final_response = {
+                "answer": answer
+            }
 
         await update.message.reply_text(
-            json.dumps(response)
+            json.dumps(final_response)
         )
-
 
     except Exception as e:
 
         print("ERROR:", e)
 
-        error_response = {
-            "answer": str(e),
-            "log_url": LOG_URL
-        }
-
+        # Return JSON only
         await update.message.reply_text(
-            json.dumps(error_response)
+            json.dumps({
+                "error": str(e)
+            })
         )
 
 
@@ -95,13 +86,11 @@ app = (
 )
 
 
-# /start command
 app.add_handler(
     CommandHandler("start", start)
 )
 
 
-# Text questions
 app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
