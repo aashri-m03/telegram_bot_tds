@@ -6,31 +6,8 @@ import requests
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 
-if not HF_TOKEN:
-    raise ValueError("HF_TOKEN missing")
+MODEL_URL = "https://router.huggingface.co/v1/chat/completions"
 
-
-MODEL_URL = (
-    "https://router.huggingface.co/"
-    "hf-inference/models/Qwen/Qwen2.5-7B-Instruct"
-)
-
-
-SYSTEM_PROMPT = """
-You are a data analyst.
-
-Rules:
-- Return only the final answer.
-- Do not repeat the question.
-- Do not explain.
-- Return valid JSON only.
-
-Format:
-
-{
- "answer": "final answer"
-}
-"""
 
 
 def analyze(question):
@@ -42,16 +19,26 @@ def analyze(question):
 
 
     payload = {
-        "inputs": (
-            SYSTEM_PROMPT
-            + "\nQuestion: "
-            + question
-        ),
-        "parameters": {
-            "max_new_tokens": 50,
-            "temperature": 0,
-            "return_full_text": False
-        }
+
+        "model": "Qwen/Qwen2.5-7B-Instruct",
+
+        "messages": [
+
+            {
+                "role": "system",
+                "content": "Answer only final answer. Return JSON: {\"answer\":\"...\"}"
+            },
+
+            {
+                "role": "user",
+                "content": question
+            }
+
+        ],
+
+        "max_tokens": 100,
+        "temperature": 0
+
     }
 
 
@@ -63,30 +50,27 @@ def analyze(question):
     )
 
 
+    print("HF STATUS:", response.status_code)
+
+    print("HF RESPONSE:", response.text)
+
+
     response.raise_for_status()
 
 
     data = response.json()
 
 
-    if isinstance(data, list):
-
-        text = data[0]["generated_text"]
-
-    else:
-
-        return {
-            "answer": str(data)
-        }
+    text = (
+        data["choices"][0]
+        ["message"]
+        ["content"]
+    )
 
 
     try:
 
-        result = json.loads(text)
-
-        return {
-            "answer": result["answer"]
-        }
+        return json.loads(text)
 
     except:
 

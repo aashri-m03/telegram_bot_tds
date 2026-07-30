@@ -1,7 +1,7 @@
 import os
 import json
-import asyncio
 import threading
+import asyncio
 
 from flask import Flask, send_file
 from dotenv import load_dotenv
@@ -24,18 +24,14 @@ load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN missing")
 
 
-LOG_URL = os.getenv(
-    "LOG_URL",
-    "run.jsonl"
-)
+LOG_URL = "run.jsonl"
 
 
-app = Flask(__name__)
+flask_app = Flask(__name__)
 
 
 telegram_app = (
@@ -47,16 +43,16 @@ telegram_app = (
 
 
 
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+# -----------------------
+# Telegram handlers
+# -----------------------
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = {
         "answer": "Hello! Send me a data analysis question.",
         "log_url": LOG_URL
     }
-
 
     await update.message.reply_text(
         json.dumps(response)
@@ -64,12 +60,11 @@ async def start(
 
 
 
-async def reply(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     question = update.message.text
+
+    print("QUESTION RECEIVED:", question)
 
 
     try:
@@ -80,21 +75,34 @@ async def reply(
         )
 
 
+        print("ANALYZER OUTPUT:", answer)
+
+
         save_log(
             question,
             answer
         )
 
 
-        response = {
+        if isinstance(answer, dict):
 
-            "answer": answer.get(
+            final_answer = answer.get(
                 "answer",
                 str(answer)
-            ),
+            )
 
+        else:
+
+            final_answer = str(answer)
+
+
+        response = {
+            "answer": final_answer,
             "log_url": LOG_URL
         }
+
+
+        print("TELEGRAM RESPONSE:", response)
 
 
         await update.message.reply_text(
@@ -106,6 +114,9 @@ async def reply(
 
 
     except Exception as e:
+
+        print("ERROR:", e)
+
 
         await update.message.reply_text(
             json.dumps(
@@ -135,14 +146,18 @@ telegram_app.add_handler(
 
 
 
-@app.route("/")
+# -----------------------
+# Flask
+# -----------------------
+
+@flask_app.route("/")
 def home():
 
-    return "Bot running"
+    return "Bot Running"
 
 
 
-@app.route("/run.jsonl")
+@flask_app.route("/run.jsonl")
 def logs():
 
     if os.path.exists("run.jsonl"):
@@ -152,29 +167,11 @@ def logs():
             mimetype="application/json"
         )
 
-
-    return "No logs yet"
-
-
-
-def run_bot():
-
-    asyncio.run(
-        telegram_app.run_polling()
-    )
+    return "No logs"
 
 
 
-if __name__ == "__main__":
-
-
-    bot_thread = threading.Thread(
-        target=run_bot,
-        daemon=True
-    )
-
-    bot_thread.start()
-
+def run_flask():
 
     port = int(
         os.environ.get(
@@ -183,8 +180,30 @@ if __name__ == "__main__":
         )
     )
 
-
-    app.run(
+    flask_app.run(
         host="0.0.0.0",
         port=port
+    )
+
+
+
+# -----------------------
+# Start
+# -----------------------
+
+if __name__ == "__main__":
+
+    flask_thread = threading.Thread(
+        target=run_flask,
+        daemon=True
+    )
+
+    flask_thread.start()
+
+
+    print("Starting Telegram bot...")
+
+
+    telegram_app.run_polling(
+        stop_signals=None
     )
