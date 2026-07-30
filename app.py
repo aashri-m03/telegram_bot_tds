@@ -1,6 +1,5 @@
 import os
 import json
-import requests
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -12,126 +11,118 @@ from telegram.ext import (
     filters
 )
 
+from analyzer import analyze
+from logger import save_log
+
+
 load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-HF_TOKEN = os.getenv("HF_TOKEN")
-
-LOG_FILE = "run.jsonl"
 
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN missing")
 
 
-def save_log(user_input, answer):
-
-    data = {
-        "timestamp": str(datetime.utcnow()),
-        "question": user_input,
-        "answer": answer
-    }
-
-    with open(LOG_FILE, "a") as f:
-        f.write(json.dumps(data) + "\n")
+LOG_FILE = "run.jsonl"
 
 
-def ask_model(question):
+async def handle_message(
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+):
 
-    # Simple math handling
-    if "50%" in question and "200" in question:
-        return "100"
+    user_text = update.message.text
 
-    url = (
-        "https://router.huggingface.co/"
-        "hf-inference/models/Qwen/Qwen2.5-7B-Instruct"
-    )
-
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "inputs": question,
-        "parameters": {
-            "max_new_tokens":100,
-            "return_full_text":False
-        }
-    }
+    print("QUESTION:", user_text)
 
 
     try:
 
-        r = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=60
+        answer = analyze(user_text)
+
+
+        response = {
+            "answer": answer,
+            "log_url": "https://telegram-bot-tds-9.onrender.com/run.jsonl"
+        }
+
+
+        # save log
+        with open(LOG_FILE, "a") as f:
+            f.write(
+                json.dumps({
+                    "time": str(datetime.now()),
+                    "question": user_text,
+                    "answer": answer
+                }) 
+                + "\n"
+            )
+
+
+        await update.message.reply_text(
+            json.dumps(response)
         )
 
-        r.raise_for_status()
 
-        data = r.json()
+    except Exception as e:
 
-        if isinstance(data,list):
-            return data[0]["generated_text"]
+        error_response = {
+            "answer": "ERROR",
+            "log_url": "https://telegram-bot-tds-9.onrender.com/run.jsonl"
+        }
 
-        return str(data)
+        await update.message.reply_text(
+            json.dumps(error_response)
+        )
 
-
-    except Exception:
-
-        return "Unable to process request"
-
-
-
-async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    question = update.message.text
+        print(e)
 
 
-    answer = ask_model(question)
 
-
-    save_log(question,answer)
-
-
-    response = {
-        "answer": answer,
-        "log_url":
-        "https://telegram-bot-tds-9.onrender.com/run.jsonl"
-    }
-
+async def start(update:Update,
+                context:ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
-        json.dumps(response)
+        "Data Analyst Bot Ready"
     )
 
 
 
-async def error_handler(update,context):
+def main():
 
-    print("ERROR:",context.error)
-
-
-
-app = Application.builder().token(TOKEN).build()
+    print("BOT STARTED")
 
 
-app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        handle
+    application = (
+        Application
+        .builder()
+        .token(TOKEN)
+        .build()
     )
-)
 
 
-app.add_error_handler(error_handler)
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_message
+        )
+    )
 
 
-print("BOT STARTED")
+    application.add_handler(
+        MessageHandler(
+            filters.COMMAND,
+            start
+        )
+    )
 
 
-app.run_polling(
-    drop_pending_updates=True
-)
+    application.run_polling(
+        drop_pending_updates=True,
+        close_loop=False
+    )
+
+
+
+if __name__ == "__main__":
+    main()
