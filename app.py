@@ -29,7 +29,6 @@ RENDER_URL = os.getenv("RENDER_URL")
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN missing")
 
-
 if not RENDER_URL:
     raise ValueError("RENDER_URL missing")
 
@@ -49,14 +48,19 @@ telegram_app = (
 
 
 
+# -------------------------
+# Telegram functions
+# -------------------------
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = {
         "answer": {
-            "message": "Hello! Send your data question."
+            "message": "Hello"
         },
         "log_url": LOG_URL
     }
+
 
     await update.message.reply_text(
         json.dumps(response)
@@ -69,10 +73,10 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = update.message.text
 
 
+    print("QUESTION:", question)
+
+
     try:
-
-        print("QUESTION:", question)
-
 
         answer = await asyncio.to_thread(
             analyze,
@@ -80,7 +84,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-        print("ANSWER FROM MODEL:", answer)
+        print("MODEL ANSWER:", answer)
 
 
         save_log(
@@ -89,7 +93,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-        # Ensure answer is JSON object
+        # make sure answer is JSON object
 
         if isinstance(answer, dict):
 
@@ -112,15 +116,29 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
 
+        print(
+            "FINAL RESPONSE:",
+            response
+        )
+
+
         await update.message.reply_text(
+
             json.dumps(
                 response,
                 ensure_ascii=False
             )
+
         )
 
 
     except Exception as e:
+
+
+        print(
+            "ERROR:",
+            e
+        )
 
 
         response = {
@@ -135,7 +153,9 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
         await update.message.reply_text(
+
             json.dumps(response)
+
         )
 
 
@@ -158,10 +178,15 @@ telegram_app.add_handler(
 
 
 
+
+# -------------------------
+# Flask
+# -------------------------
+
 @flask_app.route("/")
 def home():
 
-    return "Bot running"
+    return "Bot Running"
 
 
 
@@ -175,7 +200,9 @@ def logs():
             mimetype="application/json"
         )
 
+
     return "No logs found",404
+
 
 
 
@@ -189,6 +216,7 @@ def run_flask():
         )
     )
 
+
     flask_app.run(
         host="0.0.0.0",
         port=port
@@ -196,7 +224,20 @@ def run_flask():
 
 
 
+
+
+# -------------------------
+# MAIN
+# -------------------------
+
 if __name__ == "__main__":
+
+
+    # remove old webhook before polling
+
+    asyncio.run(
+        telegram_app.bot.delete_webhook()
+    )
 
 
     flask_thread = threading.Thread(
@@ -204,7 +245,11 @@ if __name__ == "__main__":
         daemon=True
     )
 
+
     flask_thread.start()
+
+
+    print("Telegram polling started")
 
 
     telegram_app.run_polling(

@@ -6,7 +6,7 @@ import requests
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 
-MODEL_URL = "https://router.huggingface.co/v1/chat/completions"
+URL = "https://router.huggingface.co/v1/chat/completions"
 
 
 
@@ -14,32 +14,31 @@ SYSTEM_PROMPT = """
 
 You are a data analyst.
 
-Answer the user's question.
+Answer the user question.
 
-Return ONLY valid JSON.
+Return ONLY JSON.
 
-Do not repeat the question.
+Never repeat the question.
 
-Do not add explanations.
+Never add explanations.
 
 Examples:
 
-User:
-Which state has the highest maternal mortality rate?
+Question:
+Which state has highest maternal mortality rate?
 
 Output:
-
 {
- "state": "Assam"
+ "state":"Assam"
 }
 
-User:
+
+Question:
 What is 50% of 200?
 
 Output:
-
 {
- "value": 100
+ "value":100
 }
 
 """
@@ -87,16 +86,15 @@ def analyze(question):
 
         "temperature":0,
 
-
-        "max_tokens":200
+        "max_tokens":100
 
     }
 
 
 
-    response = requests.post(
+    r = requests.post(
 
-        MODEL_URL,
+        URL,
 
         headers=headers,
 
@@ -107,24 +105,24 @@ def analyze(question):
     )
 
 
-    response.raise_for_status()
+    print(
+        "HF RESPONSE:",
+        r.text
+    )
 
 
+    r.raise_for_status()
 
-    data = response.json()
+
+    data = r.json()
 
 
 
     text = (
-
         data["choices"][0]
-
         ["message"]
-
         ["content"]
-
         .strip()
-
     )
 
 
@@ -136,9 +134,6 @@ def analyze(question):
 
     except:
 
-
         return {
-
             "answer": text
-
         }
