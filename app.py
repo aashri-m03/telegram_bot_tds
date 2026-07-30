@@ -48,19 +48,19 @@ telegram_app = (
 )
 
 
-# -----------------------
-# Telegram handlers
-# -----------------------
+# -----------------------------
+# Telegram Commands
+# -----------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    response = {
+        "answer": "Hello! Send me a data analysis question.",
+        "log_url": LOG_URL
+    }
+
     await update.message.reply_text(
-        json.dumps(
-            {
-                "answer": "Hello! Send me a data analysis question.",
-                "log_url": LOG_URL
-            }
-        )
+        json.dumps(response)
     )
 
 
@@ -73,12 +73,16 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
 
-        answer = analyze(user_text)
+        # Run HuggingFace call outside event loop
+        answer = await asyncio.to_thread(
+            analyze,
+            user_text
+        )
+
 
         print("Answer:", answer)
 
 
-        # save log
         save_log(
             user_text,
             answer
@@ -87,7 +91,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if isinstance(answer, dict):
 
-            response = {
+            final_response = {
                 "answer": answer.get(
                     "answer",
                     str(answer)
@@ -97,15 +101,16 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         else:
 
-            response = {
+            final_response = {
                 "answer": str(answer),
                 "log_url": LOG_URL
             }
 
 
+
         await update.message.reply_text(
             json.dumps(
-                response,
+                final_response,
                 ensure_ascii=False
             )
         )
@@ -143,9 +148,9 @@ telegram_app.add_handler(
 
 
 
-# -----------------------
-# Flask routes
-# -----------------------
+# -----------------------------
+# Flask Routes
+# -----------------------------
 
 @app.route("/")
 def home():
@@ -167,6 +172,8 @@ def logs():
     return "No logs found", 404
 
 
+
+# Telegram webhook endpoint
 
 @app.post(f"/{WEBHOOK_PATH}")
 def webhook():
@@ -197,9 +204,9 @@ def webhook():
 
 
 
-# -----------------------
-# Webhook setup
-# -----------------------
+# -----------------------------
+# Setup Telegram webhook
+# -----------------------------
 
 def setup_bot():
 
@@ -229,6 +236,10 @@ def setup_bot():
     asyncio.run(init())
 
 
+
+# -----------------------------
+# Run Render Server
+# -----------------------------
 
 if __name__ == "__main__":
 

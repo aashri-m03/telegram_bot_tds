@@ -1,100 +1,84 @@
 import os
 import json
-
-from huggingface_hub import InferenceClient
+import requests
 
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-if not HF_TOKEN:
-    raise ValueError("HF_TOKEN missing")
+
+MODEL_URL = (
+    "https://api-inference.huggingface.co/"
+    "models/Qwen/Qwen2.5-7B-Instruct"
+)
 
 
 SYSTEM_PROMPT = """
 You are an expert data analyst.
 
-Rules:
-1. Answer the user's question.
-2. Return ONLY valid JSON.
-3. Never use markdown.
-4. Never mention logs.
-5. Never mention files.
-6. Never mention log_url.
+Return only JSON.
 
-Return exactly:
+Format:
 
 {
-  "answer": "your answer"
+ "answer": "your answer"
 }
+
+Do not mention logs.
+Do not mention files.
+Do not mention log_url.
 """
+
 
 
 def analyze(question):
 
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+
+    payload = {
+
+        "inputs": (
+            SYSTEM_PROMPT
+            + "\nUser question: "
+            + question
+        ),
+
+        "parameters": {
+            "max_new_tokens": 800,
+            "temperature": 0
+        }
+    }
+
+
+    response = requests.post(
+        MODEL_URL,
+        headers=headers,
+        json=payload,
+        timeout=60
+    )
+
+
+    data = response.json()
+
+
+    if isinstance(data, list):
+
+        text = data[0]["generated_text"]
+
+    else:
+
+        text = str(data)
+
+
     try:
 
-        # Create fresh client every request
-        client = InferenceClient(
-            api_key=HF_TOKEN
-        )
+        return json.loads(text)
 
-
-        response = client.chat_completion(
-
-            model="Qwen/Qwen2.5-7B-Instruct",
-
-            messages=[
-                {
-                    "role": "system",
-                    "content": SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": question
-                }
-            ],
-
-            max_tokens=800,
-
-            temperature=0
-        )
-
-
-        text = (
-            response
-            .choices[0]
-            .message
-            .content
-            .strip()
-        )
-
-
-        # Remove markdown if returned
-        if text.startswith("```"):
-
-            text = (
-                text
-                .replace("```json", "")
-                .replace("```", "")
-                .strip()
-            )
-
-
-        result = json.loads(text)
-
+    except:
 
         return {
-            "answer": result.get(
-                "answer",
-                text
-            )
-        }
-
-
-    except Exception as e:
-
-        print("Analyzer error:", e)
-
-        return {
-            "answer": f"Unable to analyze: {str(e)}"
+            "answer": text
         }
