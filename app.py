@@ -1,6 +1,5 @@
 import os
 import json
-import asyncio
 
 from flask import Flask, request, send_file
 from dotenv import load_dotenv
@@ -34,15 +33,12 @@ if not RENDER_URL:
 
 LOG_URL = f"{RENDER_URL}/run.jsonl"
 
-# Telegram webhook path
 WEBHOOK_PATH = "telegram-webhook"
 
 
-# Flask app for Render
 app = Flask(__name__)
 
 
-# Telegram application
 telegram_app = (
     Application
     .builder()
@@ -52,23 +48,17 @@ telegram_app = (
 
 
 # -----------------------------
-# Telegram message handlers
+# Telegram handlers
 # -----------------------------
 
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "Hello! Send me a data analysis question."
     )
 
 
-async def reply(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_text = update.message.text
 
@@ -80,13 +70,14 @@ async def reply(
 
         print("Answer:", answer)
 
+
         save_log(
             user_text,
             answer
         )
 
 
-        if isinstance(answer, dict) and "answer" in answer:
+        if isinstance(answer, dict):
 
             response = answer
 
@@ -97,7 +88,6 @@ async def reply(
             }
 
 
-        # Add log URL
         response["log_url"] = LOG_URL
 
 
@@ -111,7 +101,8 @@ async def reply(
 
     except Exception as e:
 
-        print("ERROR:", e)
+        print("ERROR:", str(e))
+
 
         await update.message.reply_text(
             json.dumps(
@@ -148,7 +139,7 @@ telegram_app.add_handler(
 @app.route("/")
 def home():
 
-    return "Telegram Bot is running"
+    return "Telegram Bot Running"
 
 
 
@@ -166,20 +157,22 @@ def logs():
 
 
 
-# Telegram webhook endpoint
+# Telegram webhook
 
 @app.post(f"/{WEBHOOK_PATH}")
-def webhook():
+async def webhook():
+
+    data = request.get_json(force=True)
 
 
     update = Update.de_json(
-        request.get_json(force=True),
+        data,
         telegram_app.bot
     )
 
 
-    asyncio.run(
-        telegram_app.process_update(update)
+    await telegram_app.process_update(
+        update
     )
 
 
@@ -188,49 +181,44 @@ def webhook():
 
 
 # -----------------------------
-# Set Telegram webhook
+# Initialize webhook
 # -----------------------------
 
-def setup_bot():
+async def setup_bot():
+
+    await telegram_app.initialize()
+
+    await telegram_app.start()
 
 
-    async def init():
+    webhook_url = (
+        f"{RENDER_URL}/{WEBHOOK_PATH}"
+    )
 
 
-        await telegram_app.initialize()
+    await telegram_app.bot.set_webhook(
+        webhook_url
+    )
 
 
-        await telegram_app.start()
-
-
-        webhook_url = (
-            f"{RENDER_URL}/{WEBHOOK_PATH}"
-        )
-
-
-        await telegram_app.bot.set_webhook(
-            webhook_url
-        )
-
-
-        print(
-            "Webhook set:",
-            webhook_url
-        )
-
-
-    asyncio.run(init())
+    print(
+        "Webhook set:",
+        webhook_url
+    )
 
 
 
 # -----------------------------
-# Run Render server
+# Run server
 # -----------------------------
 
 if __name__ == "__main__":
 
+    import asyncio
 
-    setup_bot()
+    asyncio.run(
+        setup_bot()
+    )
 
 
     port = int(
