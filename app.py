@@ -23,12 +23,18 @@ load_dotenv()
 
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+RENDER_URL = os.getenv("RENDER_URL")
+
 
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN missing")
 
 
-LOG_URL = "run.jsonl"
+if not RENDER_URL:
+    raise ValueError("RENDER_URL missing")
+
+
+LOG_URL = f"{RENDER_URL}/run.jsonl"
 
 
 flask_app = Flask(__name__)
@@ -43,14 +49,12 @@ telegram_app = (
 
 
 
-# -----------------------
-# Telegram handlers
-# -----------------------
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = {
-        "answer": "Hello! Send me a data analysis question.",
+        "answer": {
+            "message": "Hello! Send your data question."
+        },
         "log_url": LOG_URL
     }
 
@@ -64,10 +68,11 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     question = update.message.text
 
-    print("QUESTION RECEIVED:", question)
-
 
     try:
+
+        print("QUESTION:", question)
+
 
         answer = await asyncio.to_thread(
             analyze,
@@ -75,7 +80,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-        print("ANALYZER OUTPUT:", answer)
+        print("ANSWER FROM MODEL:", answer)
 
 
         save_log(
@@ -84,25 +89,27 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+        # Ensure answer is JSON object
+
         if isinstance(answer, dict):
 
-            final_answer = answer.get(
-                "answer",
-                str(answer)
-            )
+            final_answer = answer
 
         else:
 
-            final_answer = str(answer)
+            final_answer = {
+                "answer": str(answer)
+            }
+
 
 
         response = {
+
             "answer": final_answer,
+
             "log_url": LOG_URL
+
         }
-
-
-        print("TELEGRAM RESPONSE:", response)
 
 
         await update.message.reply_text(
@@ -115,17 +122,22 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
 
-        print("ERROR:", e)
+
+        response = {
+
+            "answer": {
+                "error": str(e)
+            },
+
+            "log_url": LOG_URL
+
+        }
 
 
         await update.message.reply_text(
-            json.dumps(
-                {
-                    "error": str(e),
-                    "log_url": LOG_URL
-                }
-            )
+            json.dumps(response)
         )
+
 
 
 
@@ -146,14 +158,10 @@ telegram_app.add_handler(
 
 
 
-# -----------------------
-# Flask
-# -----------------------
-
 @flask_app.route("/")
 def home():
 
-    return "Bot Running"
+    return "Bot running"
 
 
 
@@ -167,7 +175,8 @@ def logs():
             mimetype="application/json"
         )
 
-    return "No logs"
+    return "No logs found",404
+
 
 
 
@@ -187,11 +196,8 @@ def run_flask():
 
 
 
-# -----------------------
-# Start
-# -----------------------
-
 if __name__ == "__main__":
+
 
     flask_thread = threading.Thread(
         target=run_flask,
@@ -199,9 +205,6 @@ if __name__ == "__main__":
     )
 
     flask_thread.start()
-
-
-    print("Starting Telegram bot...")
 
 
     telegram_app.run_polling(

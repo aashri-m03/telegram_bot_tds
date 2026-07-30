@@ -10,70 +10,135 @@ MODEL_URL = "https://router.huggingface.co/v1/chat/completions"
 
 
 
+SYSTEM_PROMPT = """
+
+You are a data analyst.
+
+Answer the user's question.
+
+Return ONLY valid JSON.
+
+Do not repeat the question.
+
+Do not add explanations.
+
+Examples:
+
+User:
+Which state has the highest maternal mortality rate?
+
+Output:
+
+{
+ "state": "Assam"
+}
+
+User:
+What is 50% of 200?
+
+Output:
+
+{
+ "value": 100
+}
+
+"""
+
+
+
 def analyze(question):
 
+
     headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
+
+        "Authorization":
+        f"Bearer {HF_TOKEN}",
+
+        "Content-Type":
+        "application/json"
+
     }
+
 
 
     payload = {
 
-        "model": "Qwen/Qwen2.5-7B-Instruct",
 
-        "messages": [
+        "model":
+        "Qwen/Qwen2.5-7B-Instruct",
+
+
+        "messages":
+
+        [
 
             {
-                "role": "system",
-                "content": "Answer only final answer. Return JSON: {\"answer\":\"...\"}"
+                "role":"system",
+                "content":SYSTEM_PROMPT
             },
 
             {
-                "role": "user",
-                "content": question
+                "role":"user",
+                "content":question
             }
 
         ],
 
-        "max_tokens": 100,
-        "temperature": 0
+
+        "temperature":0,
+
+
+        "max_tokens":200
 
     }
 
 
+
     response = requests.post(
+
         MODEL_URL,
+
         headers=headers,
+
         json=payload,
+
         timeout=60
+
     )
-
-
-    print("HF STATUS:", response.status_code)
-
-    print("HF RESPONSE:", response.text)
 
 
     response.raise_for_status()
 
 
+
     data = response.json()
 
 
+
     text = (
+
         data["choices"][0]
+
         ["message"]
+
         ["content"]
+
+        .strip()
+
     )
+
 
 
     try:
 
         return json.loads(text)
 
+
     except:
 
+
         return {
-            "answer": text.strip()
+
+            "answer": text
+
         }
