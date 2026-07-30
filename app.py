@@ -1,16 +1,16 @@
 import os
 import json
+from flask import Flask, request, send_file
 from dotenv import load_dotenv
 
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder,
-    MessageHandler,
+    Application,
     CommandHandler,
+    MessageHandler,
     ContextTypes,
-    filters
+    filters,
 )
-from telegram.request import HTTPXRequest
 
 from analyzer import analyze
 from logger import save_log
@@ -28,6 +28,10 @@ if not RENDER_URL:
 
 LOG_URL = f"{RENDER_URL}/run.jsonl"
 
+flask_app = Flask(__name__)
+
+telegram_app = Application.builder().token(TOKEN).build()
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -38,23 +42,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_text = update.message.text
-    print("MESSAGE RECEIVED:", user_text)
 
     try:
         answer = analyze(user_text)
 
-        # Save the interaction
         save_log(user_text, answer)
 
-        # If analyzer already returns {"answer": ...}
         if isinstance(answer, dict) and "answer" in answer:
             response = answer
         else:
-            response = {
-                "answer": answer
-            }
+            response = {"answer": answer}
 
-        # Add log URL
         response["log_url"] = LOG_URL
 
         await update.message.reply_text(
@@ -63,42 +61,54 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
 
-        print("ERROR:", e)
-
         await update.message.reply_text(
             json.dumps(
                 {
                     "error": str(e),
                     "log_url": LOG_URL
-                },
-                ensure_ascii=False
+                }
             )
         )
 
 
-request = HTTPXRequest(
-    connect_timeout=60,
-    read_timeout=60,
-    write_timeout=60,
-    pool_timeout=60
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(
+    MessageHandler(filters.TEXT & ~filters.COMMAND, reply)
 )
 
-app = (
-    ApplicationBuilder()
-    .token(TOKEN)
-    .request(request)
-    .build()
-)
 
-app.add_handler(CommandHandler("start", start))
+@flask_app.route("/")
+def home():
+    return "Bot is running."
 
-app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        reply
-    )
-)
 
-print("Bot started...")
+@flask_app.route("/run.jsonl")
+def logs():
+    if os.path.exists("run.jsonl"):
+        return send_file("run.jsonl", mimetype="application/json")
+    return "No logs found.", 404
 
-app.run_polling()
+
+@flask_app.post(f"/{TOKEN}")
+async def webhook():
+
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+
+    await telegram_app.process_update(update)
+
+    return "OK"
+
+
+async def setup():
+    await telegram_app.initialize()
+    await telegram_app.start()
+    await telegram_app.bot.set_webhook(f"{RENDER_URL}/{TOKEN}")
+
+
+import asyncio
+
+asyncio.run(setup())
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port)

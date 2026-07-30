@@ -2,12 +2,26 @@ import os
 import json
 from huggingface_hub import InferenceClient
 
-
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 client = InferenceClient(
     api_key=HF_TOKEN
 )
+
+SYSTEM_PROMPT = """
+You are an expert data analyst.
+
+Rules:
+1. Answer the user's question.
+2. Return ONLY valid JSON.
+3. Never use markdown.
+4. Never explain.
+5. If the user specifies a JSON format, follow it exactly.
+6. Otherwise return:
+{
+  "answer": ...
+}
+"""
 
 
 def analyze(question):
@@ -17,29 +31,24 @@ def analyze(question):
         messages=[
             {
                 "role": "system",
-                "content": (
-                    "You are a data analyst. "
-                    "Answer the user's question. "
-                    "Return ONLY a valid JSON object. "
-                    "No markdown, no explanation."
-                )
+                "content": SYSTEM_PROMPT
             },
             {
                 "role": "user",
                 "content": question
             }
         ],
-        max_tokens=500
+        max_tokens=800,
+        temperature=0
     )
 
     text = response.choices[0].message.content.strip()
 
     try:
-        # Convert AI JSON text into Python dictionary
         return json.loads(text)
 
-    except json.JSONDecodeError:
-        # fallback if model returns plain text
+    except Exception:
+
         return {
             "answer": text
         }
