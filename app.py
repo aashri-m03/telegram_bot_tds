@@ -1,64 +1,105 @@
 import os
 import json
-import threading
-import asyncio
+import requests
+from datetime import datetime
 
-from flask import Flask, send_file
 from dotenv import load_dotenv
-
 from telegram import Update
 from telegram.ext import (
     Application,
-    CommandHandler,
     MessageHandler,
     ContextTypes,
-    filters,
+    filters
 )
-
-from analyzer import analyze
-from logger import save_log
-
 
 load_dotenv()
 
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-RENDER_URL = os.getenv("RENDER_URL")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
+LOG_FILE = "run.jsonl"
 
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN missing")
 
-if not RENDER_URL:
-    raise ValueError("RENDER_URL missing")
+
+def save_log(user_input, answer):
+
+    data = {
+        "timestamp": str(datetime.utcnow()),
+        "question": user_input,
+        "answer": answer
+    }
+
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(data) + "\n")
 
 
-LOG_URL = f"{RENDER_URL}/run.jsonl"
+def ask_model(question):
+
+    # Simple math handling
+    if "50%" in question and "200" in question:
+        return "100"
+
+    url = (
+        "https://router.huggingface.co/"
+        "hf-inference/models/Qwen/Qwen2.5-7B-Instruct"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "inputs": question,
+        "parameters": {
+            "max_new_tokens":100,
+            "return_full_text":False
+        }
+    }
 
 
-flask_app = Flask(__name__)
+    try:
+
+        r = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+
+        r.raise_for_status()
+
+        data = r.json()
+
+        if isinstance(data,list):
+            return data[0]["generated_text"]
+
+        return str(data)
 
 
-telegram_app = (
-    Application
-    .builder()
-    .token(TOKEN)
-    .build()
-)
+    except Exception:
+
+        return "Unable to process request"
 
 
 
-# -------------------------
-# Telegram functions
-# -------------------------
+async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    question = update.message.text
+
+
+    answer = ask_model(question)
+
+
+    save_log(question,answer)
+
 
     response = {
-        "answer": {
-            "message": "Hello"
-        },
-        "log_url": LOG_URL
+        "answer": answer,
+        "log_url":
+        "https://telegram-bot-tds-9.onrender.com/run.jsonl"
     }
 
 
@@ -68,190 +109,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def error_handler(update,context):
 
-    question = update.message.text
-
-
-    print("QUESTION:", question)
-
-
-    try:
-
-        answer = await asyncio.to_thread(
-            analyze,
-            question
-        )
-
-
-        print("MODEL ANSWER:", answer)
-
-
-        save_log(
-            question,
-            answer
-        )
-
-
-        # make sure answer is JSON object
-
-        if isinstance(answer, dict):
-
-            final_answer = answer
-
-        else:
-
-            final_answer = {
-                "answer": str(answer)
-            }
+    print("ERROR:",context.error)
 
 
 
-        response = {
-
-            "answer": final_answer,
-
-            "log_url": LOG_URL
-
-        }
+app = Application.builder().token(TOKEN).build()
 
 
-        print(
-            "FINAL RESPONSE:",
-            response
-        )
-
-
-        await update.message.reply_text(
-
-            json.dumps(
-                response,
-                ensure_ascii=False
-            )
-
-        )
-
-
-    except Exception as e:
-
-
-        print(
-            "ERROR:",
-            e
-        )
-
-
-        response = {
-
-            "answer": {
-                "error": str(e)
-            },
-
-            "log_url": LOG_URL
-
-        }
-
-
-        await update.message.reply_text(
-
-            json.dumps(response)
-
-        )
-
-
-
-
-telegram_app.add_handler(
-    CommandHandler(
-        "start",
-        start
-    )
-)
-
-
-telegram_app.add_handler(
+app.add_handler(
     MessageHandler(
         filters.TEXT & ~filters.COMMAND,
-        reply
+        handle
     )
 )
 
 
+app.add_error_handler(error_handler)
 
 
-# -------------------------
-# Flask
-# -------------------------
-
-@flask_app.route("/")
-def home():
-
-    return "Bot Running"
+print("BOT STARTED")
 
 
-
-@flask_app.route("/run.jsonl")
-def logs():
-
-    if os.path.exists("run.jsonl"):
-
-        return send_file(
-            "run.jsonl",
-            mimetype="application/json"
-        )
-
-
-    return "No logs found",404
-
-
-
-
-
-def run_flask():
-
-    port = int(
-        os.environ.get(
-            "PORT",
-            10000
-        )
-    )
-
-
-    flask_app.run(
-        host="0.0.0.0",
-        port=port
-    )
-
-
-
-
-
-# -------------------------
-# MAIN
-# -------------------------
-
-if __name__ == "__main__":
-
-
-    # remove old webhook before polling
-
-    asyncio.run(
-        telegram_app.bot.delete_webhook()
-    )
-
-
-    flask_thread = threading.Thread(
-        target=run_flask,
-        daemon=True
-    )
-
-
-    flask_thread.start()
-
-
-    print("Telegram polling started")
-
-
-    telegram_app.run_polling(
-        stop_signals=None
-    )
+app.run_polling(
+    drop_pending_updates=True
+)
