@@ -13,18 +13,22 @@ if not HF_TOKEN:
 
 
 SYSTEM_PROMPT = """
-You are an expert data analyst.
+You are a data analyst.
+
+Answer the user's question.
 
 Rules:
-1. Answer the user's question.
-2. Return ONLY valid JSON.
-3. Never use markdown.
-4. Never explain outside JSON.
-5. If user specifies JSON format, follow it exactly.
-6. Otherwise return:
+- Return ONLY JSON.
+- Do not use markdown.
+- Do not mention logs.
+- Do not mention files.
+- Do not mention log_url.
+- Do not add explanations.
+
+Always return exactly:
 
 {
- "answer": "your answer"
+  "answer": "your answer"
 }
 """
 
@@ -70,7 +74,7 @@ def analyze(question):
     )
 
 
-    # remove accidental markdown
+    # Remove markdown blocks
     if text.startswith("```"):
 
         text = (
@@ -83,10 +87,18 @@ def analyze(question):
 
     try:
 
-        return json.loads(text)
+        result = json.loads(text)
 
 
-    except:
+        return {
+            "answer": result.get(
+                "answer",
+                text
+            )
+        }
+
+
+    except Exception:
 
         return {
             "answer": text

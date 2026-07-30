@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 
 from flask import Flask, request, send_file
 from dotenv import load_dotenv
@@ -47,22 +48,28 @@ telegram_app = (
 )
 
 
-# -----------------------------
+# -----------------------
 # Telegram handlers
-# -----------------------------
+# -----------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
-        "Hello! Send me a data analysis question."
+        json.dumps(
+            {
+                "answer": "Hello! Send me a data analysis question.",
+                "log_url": LOG_URL
+            }
+        )
     )
+
 
 
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_text = update.message.text
 
-    print("Received:", user_text)
+    print("Question:", user_text)
 
     try:
 
@@ -71,6 +78,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("Answer:", answer)
 
 
+        # save log
         save_log(
             user_text,
             answer
@@ -79,16 +87,20 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if isinstance(answer, dict):
 
-            response = answer
+            response = {
+                "answer": answer.get(
+                    "answer",
+                    str(answer)
+                ),
+                "log_url": LOG_URL
+            }
 
         else:
 
             response = {
-                "answer": answer
+                "answer": str(answer),
+                "log_url": LOG_URL
             }
-
-
-        response["log_url"] = LOG_URL
 
 
         await update.message.reply_text(
@@ -101,8 +113,7 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
 
-        print("ERROR:", str(e))
-
+        print("ERROR:", e)
 
         await update.message.reply_text(
             json.dumps(
@@ -132,9 +143,9 @@ telegram_app.add_handler(
 
 
 
-# -----------------------------
+# -----------------------
 # Flask routes
-# -----------------------------
+# -----------------------
 
 @app.route("/")
 def home():
@@ -157,10 +168,8 @@ def logs():
 
 
 
-# Telegram webhook
-
 @app.post(f"/{WEBHOOK_PATH}")
-async def webhook():
+def webhook():
 
     data = request.get_json(force=True)
 
@@ -171,54 +180,59 @@ async def webhook():
     )
 
 
-    await telegram_app.process_update(
-        update
-    )
+    loop = asyncio.new_event_loop()
+
+    try:
+
+        loop.run_until_complete(
+            telegram_app.process_update(update)
+        )
+
+    finally:
+
+        loop.close()
 
 
     return "OK"
 
 
 
-# -----------------------------
-# Initialize webhook
-# -----------------------------
+# -----------------------
+# Webhook setup
+# -----------------------
 
-async def setup_bot():
+def setup_bot():
 
-    await telegram_app.initialize()
+    async def init():
 
-    await telegram_app.start()
+        await telegram_app.initialize()
 
-
-    webhook_url = (
-        f"{RENDER_URL}/{WEBHOOK_PATH}"
-    )
+        await telegram_app.start()
 
 
-    await telegram_app.bot.set_webhook(
-        webhook_url
-    )
+        webhook_url = (
+            f"{RENDER_URL}/{WEBHOOK_PATH}"
+        )
 
 
-    print(
-        "Webhook set:",
-        webhook_url
-    )
+        await telegram_app.bot.set_webhook(
+            webhook_url
+        )
 
 
+        print(
+            "Webhook set:",
+            webhook_url
+        )
 
-# -----------------------------
-# Run server
-# -----------------------------
+
+    asyncio.run(init())
+
+
 
 if __name__ == "__main__":
 
-    import asyncio
-
-    asyncio.run(
-        setup_bot()
-    )
+    setup_bot()
 
 
     port = int(
