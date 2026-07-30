@@ -20,6 +20,7 @@ from logger import save_log
 
 load_dotenv()
 
+
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 RENDER_URL = os.getenv("RENDER_URL")
 
@@ -33,9 +34,12 @@ if not RENDER_URL:
 
 LOG_URL = f"{RENDER_URL}/run.jsonl"
 
+# Telegram webhook path
+WEBHOOK_PATH = "telegram-webhook"
+
 
 # Flask app for Render
-flask_app = Flask(__name__)
+app = Flask(__name__)
 
 
 # Telegram application
@@ -48,17 +52,23 @@ telegram_app = (
 
 
 # -----------------------------
-# Telegram handlers
+# Telegram message handlers
 # -----------------------------
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     await update.message.reply_text(
         "Hello! Send me a data analysis question."
     )
 
 
-async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def reply(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
 
     user_text = update.message.text
 
@@ -70,17 +80,24 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         print("Answer:", answer)
 
-        save_log(user_text, answer)
+        save_log(
+            user_text,
+            answer
+        )
 
 
         if isinstance(answer, dict) and "answer" in answer:
+
             response = answer
+
         else:
+
             response = {
                 "answer": answer
             }
 
 
+        # Add log URL
         response["log_url"] = LOG_URL
 
 
@@ -106,8 +123,12 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+
 telegram_app.add_handler(
-    CommandHandler("start", start)
+    CommandHandler(
+        "start",
+        start
+    )
 )
 
 
@@ -119,17 +140,19 @@ telegram_app.add_handler(
 )
 
 
+
 # -----------------------------
 # Flask routes
 # -----------------------------
 
-@flask_app.route("/")
+@app.route("/")
 def home():
 
-    return "Telegram Bot Running"
+    return "Telegram Bot is running"
 
 
-@flask_app.route("/run.jsonl")
+
+@app.route("/run.jsonl")
 def logs():
 
     if os.path.exists("run.jsonl"):
@@ -145,8 +168,9 @@ def logs():
 
 # Telegram webhook endpoint
 
-@flask_app.post(f"/{TOKEN}")
+@app.post(f"/{WEBHOOK_PATH}")
 def webhook():
+
 
     update = Update.de_json(
         request.get_json(force=True),
@@ -164,24 +188,34 @@ def webhook():
 
 
 # -----------------------------
-# Start Telegram webhook
+# Set Telegram webhook
 # -----------------------------
 
 def setup_bot():
 
+
     async def init():
+
 
         await telegram_app.initialize()
 
+
         await telegram_app.start()
 
-        await telegram_app.bot.set_webhook(
-            f"{RENDER_URL}/{TOKEN}"
+
+        webhook_url = (
+            f"{RENDER_URL}/{WEBHOOK_PATH}"
         )
+
+
+        await telegram_app.bot.set_webhook(
+            webhook_url
+        )
+
 
         print(
             "Webhook set:",
-            f"{RENDER_URL}/{TOKEN}"
+            webhook_url
         )
 
 
@@ -195,7 +229,9 @@ def setup_bot():
 
 if __name__ == "__main__":
 
+
     setup_bot()
+
 
     port = int(
         os.environ.get(
@@ -205,7 +241,7 @@ if __name__ == "__main__":
     )
 
 
-    flask_app.run(
+    app.run(
         host="0.0.0.0",
         port=port
     )
