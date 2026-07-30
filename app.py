@@ -1,16 +1,13 @@
 import os
 import json
-import asyncio
 import threading
+import asyncio
 
 from flask import Flask, send_file
-from dotenv import load_dotenv
 
-from telegram import Update
 from telegram.ext import (
     Application,
     MessageHandler,
-    ContextTypes,
     filters,
 )
 
@@ -18,104 +15,84 @@ from analyzer import analyze
 from logger import save_log
 
 
-load_dotenv()
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 RENDER_URL = os.getenv("RENDER_URL")
-
-
-if not TOKEN:
-    raise ValueError("TELEGRAM_TOKEN is missing")
-
-if not RENDER_URL:
-    raise ValueError("RENDER_URL is missing")
 
 
 app = Flask(__name__)
 
 
-# -------------------------
-# Flask endpoints
-# -------------------------
-
 @app.route("/")
 def home():
-    return "Telegram bot running"
+    return "BOT RUNNING"
 
 
 @app.route("/run.jsonl")
-def run_log():
+def logs():
     return send_file(
         "run.jsonl",
         mimetype="application/jsonl"
     )
 
 
-# -------------------------
-# Telegram handler
-# -------------------------
-
-async def handle_message(
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE
-):
+async def handle_message(update, context):
 
     question = update.message.text
 
-
     try:
 
-        # analyzer should return:
-        # {"state": "Assam"}
+        # Get answer from LLM
+        result = analyze(question)
 
-        answer = analyze(question)
+
+        # Save JSONL log
+        save_log(
+            question,
+            result
+        )
+
+
+        # Required assignment format
+        response = {
+            "answer": result,
+            "log_url": RENDER_URL.rstrip("/") + "/run.jsonl"
+        }
+
+
+        await update.message.reply_text(
+            json.dumps(response)
+        )
 
 
     except Exception as e:
 
-        answer = {
-            "error": str(e)
+        print("ERROR:", e)
+
+        response = {
+            "answer": {
+                "error": str(e)
+            },
+            "log_url": RENDER_URL.rstrip("/") + "/run.jsonl"
         }
 
-
-    # save JSONL log
-    log_entry = {
-        "question": question,
-        "answer": answer
-    }
-
-    save_log(log_entry)
+        await update.message.reply_text(
+            json.dumps(response)
+        )
 
 
-
-    # EXACT REQUIRED FORMAT
-    response = {
-        "answer": answer,
-        "log_url": f"{RENDER_URL}/run.jsonl"
-    }
-
-
-    # ONLY JSON OBJECT
-    await update.message.reply_text(
-        json.dumps(response)
-    )
-
-
-
-# -------------------------
-# Telegram polling
-# -------------------------
 
 def start_bot():
 
-    # Python 3.14 fix
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # Fix Python 3.14 event loop issue
+    asyncio.set_event_loop(
+        asyncio.new_event_loop()
+    )
 
 
     application = (
-        Application.builder()
-        .token(TOKEN)
+        Application
+        .builder()
+        .token(TOKEN.strip())
         .build()
     )
 
@@ -132,37 +109,26 @@ def start_bot():
 
 
     application.run_polling(
-        drop_pending_updates=True,
-        close_loop=False,
-        stop_signals=None
+        drop_pending_updates=True
     )
 
 
-
-# -------------------------
-# Main
-# -------------------------
 
 if __name__ == "__main__":
 
 
-    bot_thread = threading.Thread(
+    threading.Thread(
         target=start_bot,
         daemon=True
-    )
-
-    bot_thread.start()
-
-
-    port = int(
-        os.environ.get(
-            "PORT",
-            10000
-        )
-    )
+    ).start()
 
 
     app.run(
         host="0.0.0.0",
-        port=port
+        port=int(
+            os.environ.get(
+                "PORT",
+                10000
+            )
+        )
     )
