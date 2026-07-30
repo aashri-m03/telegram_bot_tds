@@ -1,7 +1,7 @@
 import os
 import json
-import threading
 import asyncio
+import threading
 
 from flask import Flask, send_file
 
@@ -39,55 +39,25 @@ async def handle_message(update, context):
 
     question = update.message.text
 
-    try:
+    result = analyze(question)
 
-        # Get answer from LLM
-        result = analyze(question)
-
-
-        # Save JSONL log
-        save_log(
-            question,
-            result
-        )
-
-
-        # Required assignment format
-        response = {
-            "answer": result,
-            "log_url": RENDER_URL.rstrip("/") + "/run.jsonl"
-        }
-
-
-        await update.message.reply_text(
-            json.dumps(response)
-        )
-
-
-    except Exception as e:
-
-        print("ERROR:", e)
-
-        response = {
-            "answer": {
-                "error": str(e)
-            },
-            "log_url": RENDER_URL.rstrip("/") + "/run.jsonl"
-        }
-
-        await update.message.reply_text(
-            json.dumps(response)
-        )
-
-
-
-def start_bot():
-
-    # Fix Python 3.14 event loop issue
-    asyncio.set_event_loop(
-        asyncio.new_event_loop()
+    save_log(
+        question,
+        result
     )
 
+    response = {
+        "answer": result,
+        "log_url": RENDER_URL.rstrip("/") + "/run.jsonl"
+    }
+
+    await update.message.reply_text(
+        json.dumps(response)
+    )
+
+
+
+def create_bot():
 
     application = (
         Application
@@ -104,25 +74,44 @@ def start_bot():
         )
     )
 
+    return application
+
+
+
+def start_bot():
+
+    asyncio.run(bot_main())
+
+
+
+async def bot_main():
+
+    application = create_bot()
+
+    await application.initialize()
+
+    await application.start()
+
+    await application.updater.start_polling(
+        drop_pending_updates=True
+    )
 
     print("BOT STARTED")
 
-
-    application.run_polling(
-        drop_pending_updates=True
-    )
+    await asyncio.Event().wait()
 
 
 
 if __name__ == "__main__":
 
-
+    # Start Telegram bot in background
     threading.Thread(
         target=start_bot,
         daemon=True
     ).start()
 
 
+    # Start Flask for Render
     app.run(
         host="0.0.0.0",
         port=int(
