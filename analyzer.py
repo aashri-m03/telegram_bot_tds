@@ -6,7 +6,31 @@ import requests
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 
-MODEL_URL = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct"
+if not HF_TOKEN:
+    raise ValueError("HF_TOKEN missing")
+
+
+MODEL_URL = (
+    "https://router.huggingface.co/"
+    "hf-inference/models/Qwen/Qwen2.5-7B-Instruct"
+)
+
+
+SYSTEM_PROMPT = """
+You are a data analyst.
+
+Rules:
+- Return only the final answer.
+- Do not repeat the question.
+- Do not explain.
+- Return valid JSON only.
+
+Format:
+
+{
+ "answer": "final answer"
+}
+"""
 
 
 def analyze(question):
@@ -18,10 +42,15 @@ def analyze(question):
 
 
     payload = {
-        "inputs": question,
+        "inputs": (
+            SYSTEM_PROMPT
+            + "\nQuestion: "
+            + question
+        ),
         "parameters": {
             "max_new_tokens": 50,
-            "temperature": 0
+            "temperature": 0,
+            "return_full_text": False
         }
     }
 
@@ -34,12 +63,15 @@ def analyze(question):
     )
 
 
+    response.raise_for_status()
+
+
     data = response.json()
 
 
     if isinstance(data, list):
 
-        answer = data[0]["generated_text"]
+        text = data[0]["generated_text"]
 
     else:
 
@@ -48,6 +80,16 @@ def analyze(question):
         }
 
 
-    return {
-        "answer": answer.strip()
-    }
+    try:
+
+        result = json.loads(text)
+
+        return {
+            "answer": result["answer"]
+        }
+
+    except:
+
+        return {
+            "answer": text.strip()
+        }
