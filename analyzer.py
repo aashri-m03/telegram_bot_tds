@@ -1,6 +1,7 @@
 import os
 import json
-import requests
+
+from huggingface_hub import InferenceClient
 
 
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -10,86 +11,90 @@ if not HF_TOKEN:
     raise ValueError("HF_TOKEN missing")
 
 
-MODEL_URL = (
-    "https://router.huggingface.co/"
-    "hf-inference/models/Qwen/Qwen2.5-7B-Instruct"
-)
-
-
 SYSTEM_PROMPT = """
 You are an expert data analyst.
 
 Rules:
-1. Answer the user's question.
-2. Return ONLY valid JSON.
-3. Never use markdown.
-4. Never mention logs.
-5. Never mention files.
-6. Never mention log_url.
+1. Give only the final answer.
+2. Do not repeat the user's question.
+3. Do not explain unless the user asks for explanation.
+4. Return ONLY valid JSON.
+5. Never use markdown.
+6. Never mention logs.
+7. Never mention files.
+8. Never mention log_url.
 
 Return exactly:
 
 {
-  "answer": "your answer"
+ "answer": "final answer only"
+}
+
+
+Examples:
+
+Question:
+What is 50% of 200?
+
+Answer:
+{
+ "answer": "100"
+}
+
+
+Question:
+Which state has the highest maternal mortality rate?
+
+Answer:
+{
+ "answer": "Kerala"
 }
 """
 
 
 def analyze(question):
 
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-
-    payload = {
-
-        "inputs": (
-            SYSTEM_PROMPT
-            + "\n\nUser question:\n"
-            + question
-        ),
-
-        "parameters": {
-            "max_new_tokens": 800,
-            "temperature": 0,
-            "return_full_text": False
-        }
-    }
-
-
     try:
 
-        response = requests.post(
-            MODEL_URL,
-            headers=headers,
-            json=payload,
-            timeout=60
+        client = InferenceClient(
+            api_key=HF_TOKEN
         )
 
 
-        response.raise_for_status()
+        response = client.chat_completion(
+
+            model="Qwen/Qwen2.5-7B-Instruct",
+
+            messages=[
+
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+
+                {
+                    "role": "user",
+                    "content": question
+                }
+
+            ],
+
+            max_tokens=200,
+
+            temperature=0
+        )
 
 
-        data = response.json()
+        text = (
+            response
+            .choices[0]
+            .message
+            .content
+            .strip()
+        )
 
 
-        if isinstance(data, list):
-
-            text = data[0].get(
-                "generated_text",
-                ""
-            )
-
-        else:
-
-            return {
-                "answer": str(data)
-            }
-
-
-        # Remove markdown if model adds it
+        # Remove markdown if returned
         text = (
             text
             .replace("```json", "")
@@ -101,7 +106,6 @@ def analyze(question):
         try:
 
             result = json.loads(text)
-
 
             return {
                 "answer": result.get(
@@ -120,8 +124,8 @@ def analyze(question):
 
     except Exception as e:
 
-        print("HuggingFace Error:", e)
+        print("Analyzer error:", e)
 
         return {
-            "answer": f"Unable to process request: {str(e)}"
+            "answer": str(e)
         }
