@@ -10,19 +10,23 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-
 from telegram.request import HTTPXRequest
 
 from analyzer import analyze
 from logger import save_log
 
-
 load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+RENDER_URL = os.getenv("RENDER_URL")
 
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN missing")
+
+if not RENDER_URL:
+    raise ValueError("RENDER_URL missing")
+
+LOG_URL = f"{RENDER_URL}/run.jsonl"
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,40 +37,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    print("MESSAGE RECEIVED:", update.message.text)
-
     user_text = update.message.text
+    print("MESSAGE RECEIVED:", user_text)
 
     try:
         answer = analyze(user_text)
 
-        # Save logs separately
-        save_log(
-            user_text,
-            answer
-        )
+        # Save the interaction
+        save_log(user_text, answer)
 
-        # Ensure only JSON object is sent to grader
-        if isinstance(answer, dict):
-            final_response = answer
+        # If analyzer already returns {"answer": ...}
+        if isinstance(answer, dict) and "answer" in answer:
+            response = answer
         else:
-            final_response = {
+            response = {
                 "answer": answer
             }
 
+        # Add log URL
+        response["log_url"] = LOG_URL
+
         await update.message.reply_text(
-            json.dumps(final_response)
+            json.dumps(response, ensure_ascii=False)
         )
 
     except Exception as e:
 
         print("ERROR:", e)
 
-        # Return JSON only
         await update.message.reply_text(
-            json.dumps({
-                "error": str(e)
-            })
+            json.dumps(
+                {
+                    "error": str(e),
+                    "log_url": LOG_URL
+                },
+                ensure_ascii=False
+            )
         )
 
 
@@ -77,7 +83,6 @@ request = HTTPXRequest(
     pool_timeout=60
 )
 
-
 app = (
     ApplicationBuilder()
     .token(TOKEN)
@@ -85,11 +90,7 @@ app = (
     .build()
 )
 
-
-app.add_handler(
-    CommandHandler("start", start)
-)
-
+app.add_handler(CommandHandler("start", start))
 
 app.add_handler(
     MessageHandler(
@@ -97,7 +98,6 @@ app.add_handler(
         reply
     )
 )
-
 
 print("Bot started...")
 
