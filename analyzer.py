@@ -15,19 +15,19 @@ MODEL_URL = (
 SYSTEM_PROMPT = """
 You are an expert data analyst.
 
-Return only JSON.
+Rules:
+- Return ONLY valid JSON.
+- Do not use markdown.
+- Do not mention logs.
+- Do not mention files.
+- Do not mention log_url.
 
-Format:
+Return exactly:
 
 {
  "answer": "your answer"
 }
-
-Do not mention logs.
-Do not mention files.
-Do not mention log_url.
 """
-
 
 
 def analyze(question):
@@ -48,7 +48,8 @@ def analyze(question):
 
         "parameters": {
             "max_new_tokens": 800,
-            "temperature": 0
+            "temperature": 0,
+            "return_full_text": False
         }
     }
 
@@ -70,14 +71,33 @@ def analyze(question):
 
     else:
 
-        text = str(data)
+        return {
+            "answer": str(data)
+        }
+
+
+    # Remove markdown if model adds it
+    text = (
+        text
+        .replace("```json", "")
+        .replace("```", "")
+        .strip()
+    )
 
 
     try:
 
-        return json.loads(text)
+        result = json.loads(text)
 
-    except:
+        return {
+            "answer": result.get(
+                "answer",
+                text
+            )
+        }
+
+
+    except Exception:
 
         return {
             "answer": text
