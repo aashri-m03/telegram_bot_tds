@@ -6,26 +6,22 @@ from huggingface_hub import InferenceClient
 
 HF_TOKEN = os.getenv("HF_TOKEN")
 
-
 if not HF_TOKEN:
     raise ValueError("HF_TOKEN missing")
 
 
-
 SYSTEM_PROMPT = """
-You are a data analyst.
-
-Answer the user's question.
+You are an expert data analyst.
 
 Rules:
-- Return ONLY JSON.
-- Do not use markdown.
-- Do not mention logs.
-- Do not mention files.
-- Do not mention log_url.
-- Do not add explanations.
+1. Answer the user's question.
+2. Return ONLY valid JSON.
+3. Never use markdown.
+4. Never mention logs.
+5. Never mention files.
+6. Never mention log_url.
 
-Always return exactly:
+Return exactly:
 
 {
   "answer": "your answer"
@@ -33,59 +29,56 @@ Always return exactly:
 """
 
 
-
 def analyze(question):
 
-    client = InferenceClient(
-        api_key=HF_TOKEN
-    )
+    try:
+
+        # Create fresh client every request
+        client = InferenceClient(
+            api_key=HF_TOKEN
+        )
 
 
-    response = client.chat_completion(
+        response = client.chat_completion(
 
-        model="Qwen/Qwen2.5-7B-Instruct",
+            model="Qwen/Qwen2.5-7B-Instruct",
 
-        messages=[
+            messages=[
+                {
+                    "role": "system",
+                    "content": SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": question
+                }
+            ],
 
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            },
+            max_tokens=800,
 
-            {
-                "role": "user",
-                "content": question
-            }
+            temperature=0
+        )
 
-        ],
-
-        max_tokens=800,
-
-        temperature=0
-    )
-
-
-    text = (
-        response
-        .choices[0]
-        .message
-        .content
-        .strip()
-    )
-
-
-    # Remove markdown blocks
-    if text.startswith("```"):
 
         text = (
-            text
-            .replace("```json", "")
-            .replace("```", "")
+            response
+            .choices[0]
+            .message
+            .content
             .strip()
         )
 
 
-    try:
+        # Remove markdown if returned
+        if text.startswith("```"):
+
+            text = (
+                text
+                .replace("```json", "")
+                .replace("```", "")
+                .strip()
+            )
+
 
         result = json.loads(text)
 
@@ -98,8 +91,10 @@ def analyze(question):
         }
 
 
-    except Exception:
+    except Exception as e:
+
+        print("Analyzer error:", e)
 
         return {
-            "answer": text
+            "answer": f"Unable to analyze: {str(e)}"
         }
