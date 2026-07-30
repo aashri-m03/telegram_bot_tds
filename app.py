@@ -48,9 +48,13 @@ telegram_app = (
 )
 
 
-# -----------------------------
-# Telegram Commands
-# -----------------------------
+# Store telegram event loop
+telegram_loop = None
+
+
+# -------------------------
+# Telegram handlers
+# -------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -67,24 +71,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    user_text = update.message.text
+    question = update.message.text
 
-    print("Question:", user_text)
 
     try:
 
-        # Run HuggingFace call outside event loop
         answer = await asyncio.to_thread(
             analyze,
-            user_text
+            question
         )
 
 
-        print("Answer:", answer)
-
-
         save_log(
-            user_text,
+            question,
             answer
         )
 
@@ -105,7 +104,6 @@ async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "answer": str(answer),
                 "log_url": LOG_URL
             }
-
 
 
         await update.message.reply_text(
@@ -148,9 +146,9 @@ telegram_app.add_handler(
 
 
 
-# -----------------------------
-# Flask Routes
-# -----------------------------
+# -------------------------
+# Flask routes
+# -------------------------
 
 @app.route("/")
 def home():
@@ -173,8 +171,6 @@ def logs():
 
 
 
-# Telegram webhook endpoint
-
 @app.post(f"/{WEBHOOK_PATH}")
 def webhook():
 
@@ -187,34 +183,36 @@ def webhook():
     )
 
 
-    loop = asyncio.new_event_loop()
-
-    try:
-
-        loop.run_until_complete(
-            telegram_app.process_update(update)
-        )
-
-    finally:
-
-        loop.close()
+    asyncio.run_coroutine_threadsafe(
+        telegram_app.process_update(update),
+        telegram_loop
+    )
 
 
     return "OK"
 
 
 
-# -----------------------------
-# Setup Telegram webhook
-# -----------------------------
+# -------------------------
+# Telegram setup
+# -------------------------
 
 def setup_bot():
 
+    global telegram_loop
+
+
     async def init():
+
+        global telegram_loop
+
 
         await telegram_app.initialize()
 
         await telegram_app.start()
+
+
+        telegram_loop = asyncio.get_running_loop()
 
 
         webhook_url = (
@@ -237,9 +235,9 @@ def setup_bot():
 
 
 
-# -----------------------------
-# Run Render Server
-# -----------------------------
+# -------------------------
+# Run server
+# -------------------------
 
 if __name__ == "__main__":
 
