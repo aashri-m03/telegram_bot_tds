@@ -1,14 +1,17 @@
 import os
 import json
-from datetime import datetime
+import asyncio
+import threading
 
+from flask import Flask, send_file
 from dotenv import load_dotenv
+
 from telegram import Update
 from telegram.ext import (
     Application,
     MessageHandler,
     ContextTypes,
-    filters
+    filters,
 )
 
 from analyzer import analyze
@@ -18,84 +21,100 @@ from logger import save_log
 load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+RENDER_URL = os.getenv("RENDER_URL")
+
 
 if not TOKEN:
-    raise ValueError("TELEGRAM_TOKEN missing")
+    raise ValueError("TELEGRAM_TOKEN is missing")
+
+if not RENDER_URL:
+    raise ValueError("RENDER_URL is missing")
 
 
-LOG_FILE = "run.jsonl"
+app = Flask(__name__)
 
+
+# -------------------------
+# Flask endpoints
+# -------------------------
+
+@app.route("/")
+def home():
+    return "Telegram bot running"
+
+
+@app.route("/run.jsonl")
+def run_log():
+    return send_file(
+        "run.jsonl",
+        mimetype="application/jsonl"
+    )
+
+
+# -------------------------
+# Telegram handler
+# -------------------------
 
 async def handle_message(
         update: Update,
         context: ContextTypes.DEFAULT_TYPE
 ):
 
-    user_text = update.message.text
-
-    print("QUESTION:", user_text)
+    question = update.message.text
 
 
     try:
 
-        answer = analyze(user_text)
+        # analyzer should return:
+        # {"state": "Assam"}
 
-
-        response = {
-            "answer": answer,
-            "log_url": "https://telegram-bot-tds-9.onrender.com/run.jsonl"
-        }
-
-
-        # save log
-        with open(LOG_FILE, "a") as f:
-            f.write(
-                json.dumps({
-                    "time": str(datetime.now()),
-                    "question": user_text,
-                    "answer": answer
-                }) 
-                + "\n"
-            )
-
-
-        await update.message.reply_text(
-            json.dumps(response)
-        )
+        answer = analyze(question)
 
 
     except Exception as e:
 
-        error_response = {
-            "answer": "ERROR",
-            "log_url": "https://telegram-bot-tds-9.onrender.com/run.jsonl"
+        answer = {
+            "error": str(e)
         }
 
-        await update.message.reply_text(
-            json.dumps(error_response)
-        )
 
-        print(e)
+    # save JSONL log
+    log_entry = {
+        "question": question,
+        "answer": answer
+    }
+
+    save_log(log_entry)
 
 
 
-async def start(update:Update,
-                context:ContextTypes.DEFAULT_TYPE):
+    # EXACT REQUIRED FORMAT
+    response = {
+        "answer": answer,
+        "log_url": f"{RENDER_URL}/run.jsonl"
+    }
 
+
+    # ONLY JSON OBJECT
     await update.message.reply_text(
-        "Data Analyst Bot Ready"
+        json.dumps(response)
     )
 
 
 
-def main():
+# -------------------------
+# Telegram polling
+# -------------------------
 
-    print("BOT STARTED")
+def start_bot():
+
+    # Python 3.14 fix
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
 
     application = (
-        Application
-        .builder()
+        Application.builder()
         .token(TOKEN)
         .build()
     )
@@ -109,20 +128,41 @@ def main():
     )
 
 
-    application.add_handler(
-        MessageHandler(
-            filters.COMMAND,
-            start
-        )
-    )
+    print("BOT STARTED")
 
 
     application.run_polling(
         drop_pending_updates=True,
-        close_loop=False
+        close_loop=False,
+        stop_signals=None
     )
 
 
 
+# -------------------------
+# Main
+# -------------------------
+
 if __name__ == "__main__":
-    main()
+
+
+    bot_thread = threading.Thread(
+        target=start_bot,
+        daemon=True
+    )
+
+    bot_thread.start()
+
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            10000
+        )
+    )
+
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )

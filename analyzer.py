@@ -9,18 +9,18 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 URL = "https://router.huggingface.co/v1/chat/completions"
 
 
-
 SYSTEM_PROMPT = """
-
 You are a data analyst.
 
 Answer the user question.
 
-Return ONLY JSON.
+Return ONLY a valid JSON object.
 
-Never repeat the question.
-
-Never add explanations.
+Rules:
+- Do not add markdown.
+- Do not add explanations.
+- Do not repeat the question.
+- Return only required fields.
 
 Examples:
 
@@ -29,7 +29,7 @@ Which state has highest maternal mortality rate?
 
 Output:
 {
- "state":"Assam"
+ "state": "Assam"
 }
 
 
@@ -38,84 +38,58 @@ What is 50% of 200?
 
 Output:
 {
- "value":100
+ "value": 100
 }
-
 """
-
 
 
 def analyze(question):
 
-
     headers = {
-
-        "Authorization":
-        f"Bearer {HF_TOKEN}",
-
-        "Content-Type":
-        "application/json"
-
+        "Authorization": f"Bearer {HF_TOKEN}",
+        "Content-Type": "application/json"
     }
-
 
 
     payload = {
 
+        "model": "Qwen/Qwen2.5-7B-Instruct",
 
-        "model":
-        "Qwen/Qwen2.5-7B-Instruct",
-
-
-        "messages":
-
-        [
+        "messages": [
 
             {
-                "role":"system",
-                "content":SYSTEM_PROMPT
+                "role": "system",
+                "content": SYSTEM_PROMPT
             },
 
             {
-                "role":"user",
-                "content":question
+                "role": "user",
+                "content": question
             }
 
         ],
 
+        "temperature": 0,
 
-        "temperature":0,
-
-        "max_tokens":100
-
+        "max_tokens": 100
     }
 
 
-
-    r = requests.post(
-
+    response = requests.post(
         URL,
-
         headers=headers,
-
         json=payload,
-
         timeout=60
-
     )
 
 
-    print(
-        "HF RESPONSE:",
-        r.text
-    )
+    print("HF RESPONSE:", response.text)
 
 
-    r.raise_for_status()
+    response.raise_for_status()
 
 
-    data = r.json()
-
+    data = response.json()
 
 
     text = (
@@ -126,14 +100,25 @@ def analyze(question):
     )
 
 
+    # remove markdown if model adds it
+    text = text.replace("```json", "")
+    text = text.replace("```", "")
+    text = text.strip()
+
 
     try:
+        result = json.loads(text)
 
-        return json.loads(text)
+        # ensure dictionary
+        if isinstance(result, dict):
+            return result
 
 
-    except:
+    except Exception:
+        pass
 
-        return {
-            "answer": text
-        }
+
+    # fallback
+    return {
+        "value": text
+    }
